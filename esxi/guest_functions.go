@@ -102,8 +102,8 @@ func readVmx_contents(c *Config, vmid string) (string, error) {
 }
 
 func updateVmx_contents(c *Config, vmid string, iscreate bool, memsize int, numvcpus int,
-	virthwver int, guestos string, virtual_networks [10][3]string, boot_firmware string, virtual_disks [60][2]string, notes string,
-	guestinfo map[string]interface{}) error {
+	virthwver int, guestos string, virtual_networks [10][3]string, boot_firmware string, virtual_disks [60][2]string, notes string, coresPerSocket int,
+	cdrom_iso_path string, guestinfo map[string]interface{}) error {
 
 	esxiConnInfo := getConnectionInfo(c)
 	log.Printf("[updateVmx_contents]\n")
@@ -157,6 +157,20 @@ func updateVmx_contents(c *Config, vmid string, iscreate bool, memsize int, numv
 	regexReplacement = fmt.Sprintf("firmware = \"%s\"", boot_firmware)
 	vmx_contents = re.ReplaceAllString(vmx_contents, regexReplacement)
 
+	// modify cores per socket
+	if coresPerSocket > 0 {
+		re := regexp.MustCompile("cpuid.coresPerSocket = \".*\"")
+		regexReplacement = fmt.Sprintf("cpuid.coresPerSocket = \"%d\"", coresPerSocket)
+		if re.MatchString(vmx_contents) {
+			vmx_contents = re.ReplaceAllString(vmx_contents, regexReplacement)
+		} else {
+			vmx_contents += "\n" + regexReplacement
+		}
+	} else {
+		re := regexp.MustCompile("cpuid.coresPerSocket = \".*\"")
+		vmx_contents = re.ReplaceAllString(vmx_contents, "")
+	}
+
 	// modify annotation
 	if notes != "" {
 		notes = strings.Replace(notes, "\"", "|22", -1)
@@ -170,14 +184,29 @@ func updateVmx_contents(c *Config, vmid string, iscreate bool, memsize int, numv
 		}
 	}
 
+	parsed_vmx := ParseVMX(vmx_contents)
+
 	if len(guestinfo) > 0 {
-		parsed_vmx := ParseVMX(vmx_contents)
 		for k, v := range guestinfo {
 			log.Println("SAVING", k, v)
 			parsed_vmx["guestinfo."+k] = v.(string)
 		}
-		vmx_contents = EncodeVMX(parsed_vmx)
 	}
+
+	if cdrom_iso_path != "" {
+		parsed_vmx["ide1:0.present"] = "TRUE"
+		parsed_vmx["ide1:0.deviceType"] = "cdrom-image"
+		parsed_vmx["ide1:0.fileName"] = cdrom_iso_path
+		parsed_vmx["ide1:0.startConnected"] = "TRUE"
+		delete(parsed_vmx, "ide1:0.clientDevice")
+	} else {
+		parsed_vmx["ide1:0.present"] = "TRUE"
+		parsed_vmx["ide1:0.deviceType"] = "atapi-cdrom"
+		parsed_vmx["ide1:0.fileName"] = "emptyBackingString"
+		parsed_vmx["ide1:0.startConnected"] = "FALSE"
+		parsed_vmx["ide1:0.clientDevice"] = "TRUE"
+	}
+	vmx_contents = EncodeVMX(parsed_vmx)
 
 	//
 	//  add/modify virtual disks
@@ -289,11 +318,11 @@ func updateVmx_contents(c *Config, vmid string, iscreate bool, memsize int, numv
 				vmx_contents = re.ReplaceAllString(vmx_contents, regexReplacement)
 
 				re = regexp.MustCompile("ethernet" + strconv.Itoa(i) + ".addressType = \".*\"")
-				regexReplacement = fmt.Sprintf("ethernet" + strconv.Itoa(i) + ".addressType = \"static\"")
+				regexReplacement = "ethernet" + strconv.Itoa(i) + ".addressType = \"static\""
 				vmx_contents = re.ReplaceAllString(vmx_contents, regexReplacement)
 
 				re = regexp.MustCompile("ethernet" + strconv.Itoa(i) + ".generatedAddressOffset = \".*\"")
-				regexReplacement = fmt.Sprintf("")
+				regexReplacement = ""
 				vmx_contents = re.ReplaceAllString(vmx_contents, regexReplacement)
 			}
 		}

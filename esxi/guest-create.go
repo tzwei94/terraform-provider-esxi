@@ -20,13 +20,13 @@ func guestCREATE(c *Config, guest_name string, disk_store string,
 	src_path string, resource_pool_name string, strmemsize string, strnumvcpus string, strvirthwver string, guestos string,
 	boot_disk_type string, boot_disk_size string, virtual_networks [10][3]string, boot_firmware string,
 	virtual_disks [60][2]string, guest_shutdown_timeout int, ovf_properties_timer int, notes string,
-	guestinfo map[string]interface{}, ovf_properties map[string]string) (string, error) {
+	cdrom_iso_path string, cores_per_socket string, guestinfo map[string]interface{}, ovf_properties map[string]string) (string, error) {
 
 	esxiConnInfo := getConnectionInfo(c)
 	log.Printf("[guestCREATE]\n")
 
-	var memsize, numvcpus, virthwver int
-	var boot_disk_vmdkPATH, remote_cmd, vmid, stdout, vmx_contents string
+	var memsize, numvcpus, virthwver, coresPerSocket int
+	var boot_disk_vmdkPATH, remote_cmd, vmid, stdout, vmx_contents, isofilename string
 	var osShellCmd, osShellCmdOpt string
 	var out bytes.Buffer
 	var err error
@@ -38,6 +38,7 @@ func guestCREATE(c *Config, guest_name string, disk_store string,
 	memsize, _ = strconv.Atoi(strmemsize)
 	numvcpus, _ = strconv.Atoi(strnumvcpus)
 	virthwver, _ = strconv.Atoi(strvirthwver)
+	coresPerSocket, _ = strconv.Atoi(cores_per_socket)
 
 	//
 	//  Check if Disk Store already exists
@@ -92,8 +93,7 @@ func guestCREATE(c *Config, guest_name string, disk_store string,
 			}
 		}
 
-		hasISO := false
-		isofilename := ""
+		isofilename = strings.TrimSpace(cdrom_iso_path)
 		notes = strings.Replace(notes, "\"", "|22", -1)
 
 		if numvcpus == 0 {
@@ -124,7 +124,7 @@ func guestCREATE(c *Config, guest_name string, disk_store string,
 				fmt.Sprintf("floppy0.present = \\\"FALSE\\\"\n") +
 				fmt.Sprintf("scsi0.present = \\\"TRUE\\\"\n") +
 				fmt.Sprintf("scsi0.sharedBus = \\\"none\\\"\n") +
-				fmt.Sprintf("scsi0.virtualDev = \\\"lsilogic\\\"\n") +
+				fmt.Sprintf("scsi0.virtualDev = \\\"pvscsi\\\"\n") +
 				fmt.Sprintf("disk.EnableUUID = \\\"TRUE\\\"\n") +
 				fmt.Sprintf("pciBridge0.present = \\\"TRUE\\\"\n") +
 				fmt.Sprintf("pciBridge4.present = \\\"TRUE\\\"\n") +
@@ -150,18 +150,19 @@ func guestCREATE(c *Config, guest_name string, disk_store string,
 			vmx_contents = vmx_contents +
 				fmt.Sprintf("firmware = \\\"bios\\\"\n")
 		}
-		if hasISO == true {
+		if isofilename != "" {
+			vmx_contents = vmx_contents +
+				fmt.Sprintf("ide1:0.present = \\\"TRUE\\\"\n") +
+				fmt.Sprintf("ide1:0.fileName = \\\"%s\\\"\n", isofilename) +
+				fmt.Sprintf("ide1:0.deviceType = \\\"cdrom-image\\\"\n") +
+				fmt.Sprintf("ide1:0.startConnected = \\\"TRUE\\\"\n")
+		} else {
 			vmx_contents = vmx_contents +
 				fmt.Sprintf("ide1:0.present = \\\"TRUE\\\"\n") +
 				fmt.Sprintf("ide1:0.fileName = \\\"emptyBackingString\\\"\n") +
 				fmt.Sprintf("ide1:0.deviceType = \\\"atapi-cdrom\\\"\n") +
 				fmt.Sprintf("ide1:0.startConnected = \\\"FALSE\\\"\n") +
 				fmt.Sprintf("ide1:0.clientDevice = \\\"TRUE\\\"\n")
-		} else {
-			vmx_contents = vmx_contents +
-				fmt.Sprintf("ide1:0.present = \\\"TRUE\\\"\n") +
-				fmt.Sprintf("ide1:0.fileName = \\\"%s\\\"\n", isofilename) +
-				fmt.Sprintf("ide1:0.deviceType = \\\"cdrom-raw\\\"\n")
 		}
 
 		//
@@ -369,7 +370,7 @@ func guestCREATE(c *Config, guest_name string, disk_store string,
 	//
 	//  make updates to vmx file
 	//
-	err = updateVmx_contents(c, vmid, true, memsize, numvcpus, virthwver, guestos, virtual_networks, boot_firmware, virtual_disks, notes, guestinfo)
+	err = updateVmx_contents(c, vmid, true, memsize, numvcpus, virthwver, guestos, virtual_networks, boot_firmware, virtual_disks, notes, coresPerSocket, isofilename, guestinfo)
 	if err != nil {
 		return vmid, fmt.Errorf("Failed to update vmx contents: %s\n", err)
 	}

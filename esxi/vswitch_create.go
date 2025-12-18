@@ -1,6 +1,7 @@
 package esxi
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -114,7 +115,7 @@ func resourceVSWITCHCreate(d *schema.ResourceData, m interface{}) error {
 	d.Set("forged_transmits", forged_transmits)
 
 	if somthingWentWrong != "" {
-		return fmt.Errorf(somthingWentWrong)
+		return errors.New(somthingWentWrong)
 	}
 	return nil
 }

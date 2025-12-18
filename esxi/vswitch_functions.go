@@ -1,6 +1,7 @@
 package esxi
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"regexp"
@@ -101,7 +102,7 @@ func vswitchRead(c *Config, name string) (int, int, []string, string, bool, bool
 	stdout, _ = runRemoteSshCommand(esxiConnInfo, remote_cmd, "vswitch list")
 
 	if stdout == "" {
-		return 0, 0, uplinks, "", false, false, false, fmt.Errorf(stdout)
+		return 0, 0, uplinks, "", false, false, false, errors.New(stdout)
 	}
 
 	re, _ := regexp.Compile(`Configured Ports: ([0-9]*)`)
@@ -142,7 +143,7 @@ func vswitchRead(c *Config, name string) (int, int, []string, string, bool, bool
 
 	if stdout == "" {
 		log.Printf("[vswitchRead] Failed to run %s: %s\n", "vswitch policy security get", err)
-		return 0, 0, uplinks, "", false, false, false, fmt.Errorf(stdout)
+		return 0, 0, uplinks, "", false, false, false, errors.New(stdout)
 	}
 
 	re, _ = regexp.Compile(`Allow Promiscuous: (.*)`)
@@ -170,7 +171,7 @@ func vswitchRead(c *Config, name string) (int, int, []string, string, bool, bool
 		mac_changes, forged_transmits, nil
 }
 
-//  Python is better... :-)
+// Python is better... :-)
 func inArrayOfStrings(slice []string, val string) bool {
 	for _, item := range slice {
 		if item == val {

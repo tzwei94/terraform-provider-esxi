@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/helper/validation"
@@ -166,6 +168,13 @@ func resourceGUEST() *schema.Resource {
 				Description:  "The amount of time, in seconds, to wait for a graceful shutdown before doing a forced power off.",
 				ValidateFunc: validation.IntBetween(0, 600),
 			},
+			"cores_per_socket": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				Computed:     true,
+				Description:  "Number of cores per CPU socket (vmx cpuid.coresPerSocket).",
+				ValidateFunc: validation.StringMatch(regexp.MustCompile(`^\d*$`), "must be an integer"),
+			},
 			"virtual_disks": &schema.Schema{
 				Type:     schema.TypeList,
 				Optional: true,
@@ -213,6 +222,12 @@ func resourceGUEST() *schema.Resource {
 				Description:  "The amount of time, in seconds, to wait for the guest to boot and run ovf_properties.",
 				ValidateFunc: validation.IntBetween(0, 6000),
 			},
+			"cdrom_iso_path": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				ForceNew:    false,
+				Description: "Datastore ISO path to mount on ide1:0, e.g. /vmfs/volumes/<datastore>/path/file.iso.",
+			},
 			"notes": &schema.Schema{
 				Type:        schema.TypeString,
 				Optional:    true,
@@ -258,6 +273,8 @@ func resourceGUESTCreate(d *schema.ResourceData, m interface{}) error {
 	boot_firmware := d.Get("boot_firmware").(string)
 	notes := d.Get("notes").(string)
 	power := d.Get("power").(string)
+	cdrom_iso_path := d.Get("cdrom_iso_path").(string)
+	cores_per_socket := d.Get("cores_per_socket").(string)
 
 	if d.Get("guest_startup_timeout").(int) > 0 {
 		d.Set("guest_startup_timeout", d.Get("guest_startup_timeout").(int))
@@ -326,6 +343,17 @@ func resourceGUESTCreate(d *schema.ResourceData, m interface{}) error {
 	tmpint, _ = strconv.Atoi(boot_disk_size)
 	if (tmpint < 1 || tmpint > 62000) && boot_disk_size != "" {
 		return errors.New("Error: boot_disk_size must be an > 1 and < 62000")
+	}
+
+	// Validate cdrom_iso_path
+	if cdrom_iso_path != "" && strings.HasPrefix(cdrom_iso_path, "/vmfs/volumes/") == false {
+		return errors.New("Error: cdrom_iso_path must be a datastore path like /vmfs/volumes/<datastore>/path/file.iso")
+	}
+	if cores_per_socket != "" {
+		tmpint, err := strconv.Atoi(cores_per_socket)
+		if err != nil || tmpint < 1 {
+			return errors.New("Error: cores_per_socket must be a positive integer")
+		}
 	}
 
 	//  Validate lan adapters
@@ -402,7 +430,7 @@ func resourceGUESTCreate(d *schema.ResourceData, m interface{}) error {
 
 	vmid, err := guestCREATE(c, guest_name, disk_store, src_path, resource_pool_name, memsize,
 		numvcpus, virthwver, guestos, boot_disk_type, boot_disk_size, virtual_networks, boot_firmware,
-		virtual_disks, guest_shutdown_timeout, ovf_properties_timer, notes, guestinfo, ovf_properties)
+		virtual_disks, guest_shutdown_timeout, ovf_properties_timer, notes, cdrom_iso_path, cores_per_socket, guestinfo, ovf_properties)
 	if err != nil {
 		tmpint, _ = strconv.Atoi(vmid)
 		if tmpint > 0 {
